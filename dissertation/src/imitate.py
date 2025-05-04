@@ -3,7 +3,7 @@
 import rospy
 import cv2
 from sensor_msgs.msg import CompressedImage
-from geometry_msgs.msg import TwistStamped
+from std_msgs.msg import Float64
 from cv_bridge import CvBridge
 import numpy as np
 import os
@@ -28,8 +28,8 @@ class MiRoClient:
             tcp_nodelay=True,
         )
 
-        self.vel_pub = rospy.Publisher(
-            topic_base_name + "/control/cmd_vel", TwistStamped, queue_size=0
+        self.head_yaw_pub = rospy.Publisher(
+            topic_base_name + "/control/head_yaw/pos", Float64, queue_size=0
         )
 
         self.input_camera = None
@@ -91,26 +91,14 @@ class MiRoClient:
 
                     if success:
                         rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
-                        sy = np.sqrt(rotation_matrix[0, 0] ** 2 + rotation_matrix[1, 0] ** 2)
-                        singular = sy < 1e-6
+                        yaw = np.degrees(np.arctan2(-rotation_matrix[2, 0], np.sqrt(rotation_matrix[0, 0] ** 2 + rotation_matrix[1, 0] ** 2)))
 
-                        if not singular:
-                            x = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
-                            y = np.arctan2(-rotation_matrix[2, 0], sy)
-                            z = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
-                        else:
-                            x = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
-                            y = np.arctan2(-rotation_matrix[2, 0], sy)
-                            z = 0
+                        # Clamp and map yaw to MiRo head yaw range (roughly -0.5 to +0.5 radians)
+                        yaw_radians = np.clip(np.radians(yaw), -0.5, 0.5)
 
-                        pitch = np.degrees(x)
-                        yaw = np.degrees(y)
-                        roll = np.degrees(z)
+                        # Publish to MiRo head yaw
+                        self.head_yaw_pub.publish(Float64(yaw_radians))
 
-                        msg_cmd_vel = TwistStamped()
-                        msg_cmd_vel.twist.angular.z = np.clip(yaw / 30.0, -1.0, 1.0)
-                        msg_cmd_vel.twist.angular.y = np.clip(pitch / 30.0, -1.0, 1.0)
-                        self.vel_pub.publish(msg_cmd_vel)
             rospy.sleep(self.TICK)
 
 if __name__ == "__main__":
