@@ -90,6 +90,10 @@ class MiRoClient:
                     )
 
                     if success:
+                        # Print rotation and translation for debugging
+                        print(f"Rotation Vector: {rotation_vector}")
+                        print(f"Translation Vector: {translation_vector}")
+                        
                         rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
                         yaw = np.degrees(np.arctan2(-rotation_matrix[2, 0], np.sqrt(rotation_matrix[0, 0] ** 2 + rotation_matrix[1, 0] ** 2)))
 
@@ -97,9 +101,27 @@ class MiRoClient:
                         yaw_radians = np.clip(np.radians(yaw), -0.5, 0.5)
 
                         # Publish to MiRo head yaw
+                        print(f"Publishing Yaw: {yaw_radians}")
                         self.head_yaw_pub.publish(Float64(yaw_radians))
 
+                # Show the camera feed with landmarks (optional)
+                if results.multi_face_landmarks:
+                    for face_landmarks in results.multi_face_landmarks:
+                        for landmark in face_landmarks.landmark:
+                            h, w, _ = frame.shape
+                            x, y = int(landmark.x * w), int(landmark.y * h)
+                            cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
+
+                # Display the image feed
+                cv2.imshow("MiRo Camera Feed", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                
+            # Check if 'q' is pressed to close the window
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
             rospy.sleep(self.TICK)
+
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     node = MiRoClient()
