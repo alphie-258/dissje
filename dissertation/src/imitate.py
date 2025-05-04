@@ -13,6 +13,8 @@ class MiRoClient:
     TICK = 0.02  # Update interval for the control loop
     FRAME_WIDTH = 640
     FRAME_HEIGHT = 480
+    YAW_LIMIT = 0.5  # Yaw limit in radians
+    PITCH_LIMIT = 0.5  # Pitch limit in radians
 
     def __init__(self):
         rospy.init_node("face_mimic", anonymous=True)
@@ -28,8 +30,12 @@ class MiRoClient:
             tcp_nodelay=True,
         )
 
+        # Publisher for the head yaw and pitch pose
         self.head_yaw_pub = rospy.Publisher(
             topic_base_name + "/control/head_yaw/pos", Float64, queue_size=0
+        )
+        self.head_pitch_pub = rospy.Publisher(
+            topic_base_name + "/control/head_pitch/pos", Float64, queue_size=0
         )
 
         self.input_camera = None
@@ -46,7 +52,7 @@ class MiRoClient:
         ], dtype="double")
         self.dist_coeffs = np.zeros((4, 1))
 
-        # 3D model points
+        # 3D model points (for face alignment)
         self.model_points = np.array([
             (0.0, 0.0, 0.0),          # Nose tip
             (0.0, -63.6, -12.5),      # Chin
@@ -93,16 +99,26 @@ class MiRoClient:
                         # Print rotation and translation for debugging
                         print(f"Rotation Vector: {rotation_vector}")
                         print(f"Translation Vector: {translation_vector}")
-                        
+
                         rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+
+                        # Calculate yaw (left-right movement)
                         yaw = np.degrees(np.arctan2(-rotation_matrix[2, 0], np.sqrt(rotation_matrix[0, 0] ** 2 + rotation_matrix[1, 0] ** 2)))
 
-                        # Clamp and map yaw to MiRo head yaw range (roughly -0.5 to +0.5 radians)
-                        yaw_radians = np.clip(np.radians(yaw), -0.5, 0.5)
+                        # Calculate pitch (up-down movement)
+                        pitch = np.degrees(np.arctan2(rotation_matrix[0, 2], rotation_matrix[2, 2]))
 
-                        # Publish to MiRo head yaw
-                        print(f"Publishing Yaw: {yaw_radians}")
+                        # Clamp yaw and pitch to the allowed limits
+                        yaw_radians = np.clip(np.radians(yaw), -self.YAW_LIMIT, self.YAW_LIMIT)
+                        pitch_radians = np.clip(np.radians(pitch), -self.PITCH_LIMIT, self.PITCH_LIMIT)
+
+                        # Print yaw and pitch values for debugging
+                        print(f"Detected Head Yaw: {yaw_radians}")
+                        print(f"Detected Head Pitch: {pitch_radians}")
+
+                        # Publish the head yaw and pitch to MiRo
                         self.head_yaw_pub.publish(Float64(yaw_radians))
+                        self.head_pitch_pub.publish(Float64(pitch_radians))
 
                 # Show the camera feed with landmarks (optional)
                 if results.multi_face_landmarks:
@@ -114,7 +130,7 @@ class MiRoClient:
 
                 # Display the image feed
                 cv2.imshow("MiRo Camera Feed", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                
+
             # Check if 'q' is pressed to close the window
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
